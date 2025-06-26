@@ -1,3 +1,4 @@
+Working fine(just light blur)
 import boto3
 import os
 import tempfile
@@ -60,3 +61,42 @@ def lambda_handler(event, context):
         'statusCode': 200,
         'body': f'Processed and uploaded to {output_key}'
     }
+
+updated (for intense blur)
+
+
+import cv2
+import numpy as np
+from PIL import Image
+
+# Load image using PIL
+image = Image.open(input_path).convert("RGB")
+img_cv = np.array(image)[:, :, ::-1]  # RGB to BGR for OpenCV
+
+# Create a mask and apply blur only to that area
+mask = np.zeros(img_cv.shape[:2], dtype=np.uint8)
+
+# Assuming Rekognition returns bounding boxes
+for label in response['CustomLabels']:
+    if 'Geometry' in label:
+        box = label['Geometry']['BoundingBox']
+        height, width = img_cv.shape[:2]
+
+        # Convert relative box to absolute pixel coords
+        top = int(box['Top'] * height)
+        left = int(box['Left'] * width)
+        box_height = int(box['Height'] * height)
+        box_width = int(box['Width'] * width)
+
+        # Fill mask with white in the bounding box region
+        mask[top:top + box_height, left:left + box_width] = 255
+
+# Strong blur: increase kernel size for heavy blur
+blurred = cv2.GaussianBlur(img_cv, (55, 55), 0)
+
+# Blend original + blurred using mask
+result = np.where(mask[:, :, None] == 255, blurred, img_cv)
+
+# Save result
+cv2.imwrite(output_path, result)
+
