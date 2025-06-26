@@ -100,3 +100,66 @@ result = np.where(mask[:, :, None] == 255, blurred, img_cv)
 # Save result
 cv2.imwrite(output_path, result)
 
+
+draft 2 (for intense blur)
+
+import boto3
+import os
+import tempfile
+from PIL import Image
+import cv2
+import numpy as np
+
+s3 = boto3.client('s3')
+rekognition = boto3.client('rekognition')
+
+def lambda_handler(event, context):
+    # Get image file name from S3 event
+    bucket = 'test-sample-reva'
+    key = event['Records'][0]['s3']['object']['key']
+    
+    # Paths for input and output
+    input_path = os.path.join(tempfile.gettempdir(), 'input.jpg')
+    output_path = os.path.join(tempfile.gettempdir(), 'output.jpg')
+    
+    # Download image from S3
+    s3.download_file(bucket, key, input_path)
+    
+    # Call Rekognition to detect rash
+    response = rekognition.detect_custom_labels(
+        ProjectVersionArn='arn:aws:rekognition:us-east-1:1611289594039:project/sample-test-rv/version/sample-test-rv.2024-05-01T12.12.20/1714561979389',
+        Image={'S3Object': {'Bucket': bucket, 'Name': key}}
+    )
+    
+    # Load image using PIL and convert to OpenCV BGR format
+    image = Image.open(input_path).convert('RGB')
+    img_cv = np.array(image)[..., ::-1]  # Convert to BGR
+    height, width = img_cv.shape[:2]
+    
+    # Blur the entire image
+    blurred = cv2.GaussianBlur(img_cv, (55, 55), 0)
+
+    # Loop through detected rash regions and paste back the original rash area
+    for label in response['CustomLabels']:
+        if label['Confidence'] > 90 and 'Geometry' in label:
+            box = label['Geometry']['BoundingBox']
+            
+            top = int(box['Top'] * height)
+            left = int(box['Left'] * width)
+            box_height = int(box['Height'] * height)
+            box_width = int(box['Width'] * width)
+            
+            # Paste original rash region onto blurred image
+            blurred[top:top + box_height, left:left + box_width] = img_cv[top:top + box_height, left:left + box_width]
+
+    # Save the final result
+    cv2.imwrite(output_path, blurred)
+
+    # Upload to output-images/ folder
+    output_key = key.replace('input-images/', 'output-images/')
+    s3.upload_file(output_path, bucket, output_key)
+
+    return {
+        'statusCode': 200,
+        'body': f'Processed and uploaded to {output_key}'
+    }
