@@ -1,3 +1,9 @@
+file_bytes = np.fromfile(input_path, dtype=np.uint8)
+img_cv = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
+
+
+
+
 for label in response['CustomLabels']:
     if label['Confidence'] > 60 and 'Geometry' in label:
         box = label['Geometry']['BoundingBox']
