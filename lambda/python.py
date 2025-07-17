@@ -1,3 +1,69 @@
+BLACK OUT BLUR
+import boto3
+import json
+import os
+import tempfile
+from PIL import Image
+from io import BytesIO
+import cv2
+import numpy as np
+
+s3 = boto3.client('s3')
+rekognition = boto3.client('rekognition')
+
+def lambda_handler(event, context):
+    # Get image file name from S3 event
+    bucket = 'test-sample-reva-rv'
+    key = event['Records'][0]['s3']['object']['key']
+    
+    # Paths for input and output
+    input_path = os.path.join(tempfile.gettempdir(), 'input.jpg')
+    output_path = os.path.join(tempfile.gettempdir(), 'output.jpg')
+    
+    # Download image from S3
+    s3.download_file(bucket, key, input_path)
+    
+    # Call Rekognition to detect custom labels (eyes, nose, mouth, etc.)
+    response = rekognition.detect_custom_labels(
+        ProjectVersionArn='arn:aws:rekognition:us-east-1:161289594039:project/sample-test-rv/version/sample-test-rv.2025-07-10T13.46.54/1752169614968',
+        Image={'S3Object': {'Bucket': bucket, 'Name': key}}
+    )
+    
+    # Load image using PIL and convert to OpenCV BGR format
+    image = Image.open(input_path).convert('RGB')
+    img_cv = np.array(image)[..., ::-1]  # Convert to BGR
+    height, width = img_cv.shape[:2]
+    
+    # Loop through detected regions and blackout those areas
+    for label in response['CustomLabels']:
+        if label['Confidence'] > 60 and 'Geometry' in label:
+            box = label['Geometry']['BoundingBox']
+            
+            top = int(box['Top'] * height)
+            left = int(box['Left'] * width)
+            box_height = int(box['Height'] * height)
+            box_width = int(box['Width'] * width)
+            
+            # Draw a filled black rectangle (blackout)
+            cv2.rectangle(img_cv, 
+                          (left, top), 
+                          (left + box_width, top + box_height), 
+                          (0, 0, 0), 
+                          thickness=-1)
+
+    # Save the final result
+    cv2.imwrite(output_path, img_cv)
+
+    # Upload to output-images/ folder
+    output_key = key.replace('input-images/', 'output-images/')
+    s3.upload_file(output_path, bucket, output_key)
+
+    return {
+        'statusCode': 200,
+        'body': f'Processed and uploaded to {output_key}'
+    }
+
+-----------------------------------------------------------------------------------------------
 import boto3
 import json
 import os
