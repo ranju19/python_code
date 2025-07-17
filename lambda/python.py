@@ -1,3 +1,26 @@
+for label in response['CustomLabels']:
+    if label['Confidence'] > 60 and 'Geometry' in label:
+        box = label['Geometry']['BoundingBox']
+        
+        top = int(box['Top'] * height)
+        left = int(box['Left'] * width)
+        box_height = int(box['Height'] * height)
+        box_width = int(box['Width'] * width)
+
+        # Ensure the coordinates stay within image bounds
+        x1 = max(0, left)
+        y1 = max(0, top)
+        x2 = min(width, left + box_width)
+        y2 = min(height, top + box_height)
+
+        # Final draw - with all integer safe values
+        cv2.rectangle(img_cv, (x1, y1), (x2, y2), (0, 0, 0), thickness=-1)
+
+
+
+
+
+
 BLACK OUT BLUR
 import boto3
 import json
